@@ -182,7 +182,7 @@ def calc_beta_vec(v, Q):
 # Median filter
 
 class ImageRecover():
-    def __init__(self, img_path='nature.bmp', block_size=16, S_values=np.arange(10, 231, 20), lambda_val_list=np.logspace(-7, 5, num=30), num_cv_folds=10):
+    def __init__(self, img_path='fishing_boat.bmp', block_size=8, S_values=np.arange(10, 60, 60), lambda_val_list=np.logspace(-7, 5, num=30), num_cv_folds=10):
         self.T = make_T(block_size)
         self.block_size = block_size
         self.num_cv_folds = num_cv_folds
@@ -195,12 +195,7 @@ class ImageRecover():
         block_for_viewing, sampled_pixels, sampled_pixel_indices_in_T, unknown_pixels, unknown_pixels_indices = sample_pixels_from_block(block, self.S, copy=True)
         sampled_block = block_for_viewing.copy()
 
-        # Cross validation
-        # print(block_for_viewing, '\n\n', sampled_pixels, '\n\n', sampled_pixel_indices_in_T, '\n\n', unknown_pixels, '\n\n', unknown_pixels_indices)
-
         indicies = np.arange(len(sampled_pixels))
-
-        sampled_pixels_indicies_shuffled, sampled_pixel_indices_in_T_shuffled = np.arange(len(sampled_pixels)), sampled_pixel_indices_in_T.copy()
 
         lambda_val_errors = {}
         for lambda_val in self.lambda_val_list:
@@ -208,26 +203,19 @@ class ImageRecover():
             # TODO: need to fix the random sampling here. For each fold, need to repeat process of randomly sampling t
             #  testing pixels, not shuffling and taking partitions
 
-            temp = list(zip(sampled_pixels_indicies_shuffled, sampled_pixel_indices_in_T_shuffled))
-            np.random.shuffle(temp)
-            sampled_pixels_indicies_shuffled, sampled_pixel_indices_in_T_shuffled = zip(*temp)
-            sampled_pixels_indicies_shuffled, sampled_pixel_indices_in_T_shuffled = np.array(
-                sampled_pixels_indicies_shuffled), np.array(sampled_pixel_indices_in_T_shuffled)
-
-            fold_sizes = [self.S // self.num_cv_folds + (1 if x < self.S % self.num_cv_folds else 0) for x in
-                          range(self.num_cv_folds)]
+            fold_size = self.S // self.num_cv_folds
 
             cv_fold_errors = []
-            starting_index = 0
-            for fold_size in fold_sizes:
-                val_pixel_indices_in_T = sampled_pixel_indices_in_T_shuffled[starting_index:starting_index + fold_size]
-                train_pixel_indices_in_T = [index for index in sampled_pixel_indices_in_T_shuffled if index not in val_pixel_indices_in_T]
+            for fold in range(self.num_cv_folds):
+                np.random.shuffle(indicies)
+                train_indices = indicies[fold_size:]
+                val_indices = indicies[:fold_size]
 
-                val_pixel_indices = sampled_pixels_indicies_shuffled[starting_index:starting_index + fold_size]
-                train_pixel_indices = [index for index in sampled_pixels_indicies_shuffled if index not in val_pixel_indices]
+                train_pixel_indices_in_T = sampled_pixel_indices_in_T[train_indices]
+                val_pixel_indices_in_T = sampled_pixel_indices_in_T[val_indices]
 
-                train_pixels = sampled_pixels[train_pixel_indices]
-                val_pixels = sampled_pixels[val_pixel_indices]
+                train_pixels = sampled_pixels[train_indices]
+                val_pixels = sampled_pixels[val_indices]
 
                 T_sampled_train = self.T[train_pixel_indices_in_T, :]
                 dct_coeffs = estimate_dct_coeffs(T_sampled_train, train_pixels, lambda_val)
@@ -239,7 +227,6 @@ class ImageRecover():
                 cv_error = mse(val_pixels, val_pixels_estimated)
                 cv_fold_errors.append(cv_error)
 
-                starting_index += fold_size
 
             lambda_val_avg_error = np.array(cv_fold_errors).sum() / len(cv_fold_errors)
             lambda_val_errors[lambda_val] = lambda_val_avg_error
@@ -291,25 +278,27 @@ class ImageRecover():
 
             recovered_blocks, sampled_blocks = img_blocks.copy(), img_blocks.copy()
 
-            for i in tqdm(range(len(img_blocks))):
-                recovered_blocks[i], sampled_blocks[i] = self.recover_block(img_blocks[i])
+            self.recover_block(img_blocks[0])
 
-            # Combine recovered blocks, apply median filter, and show recovered image
-            img_sampled = combine_block_to_get_image(sampled_blocks, self.img.shape)
-            img_show(img_sampled, f'Sampled Image with S={self.S}')
-
-            recovered_img = combine_block_to_get_image(recovered_blocks, self.img.shape)
-            mse_error_before_filtering = mse(self.img, recovered_img)
-            img_show(recovered_img, f'Recovered Image Before Filtering for S={self.S}, MSE={mse_error_before_filtering:.2f}')
-            print('MSE for Recovered Image Before Filtering:', mse_error_before_filtering)
-
-            recovered_img_filtered = median_filter(recovered_img)
-            mse_error = mse(self.img, recovered_img_filtered)
-            img_show(recovered_img_filtered, f'Recovered Image After Filtering for S={self.S}, MSE={mse_error:.2f}')
-            print('MSE for Recovered Image After Filtering:', mse_error)
-
-            errors_before_filtering[self.S] = mse_error_before_filtering
-            errors[self.S] = mse_error
+            # for i in tqdm(range(len(img_blocks))):
+            #     recovered_blocks[i], sampled_blocks[i] = self.recover_block(img_blocks[i])
+            #
+            # # Combine recovered blocks, apply median filter, and show recovered image
+            # img_sampled = combine_block_to_get_image(sampled_blocks, self.img.shape)
+            # img_show(img_sampled, f'Sampled Image with S={self.S}')
+            #
+            # recovered_img = combine_block_to_get_image(recovered_blocks, self.img.shape)
+            # mse_error_before_filtering = mse(self.img, recovered_img)
+            # img_show(recovered_img, f'Recovered Image Before Filtering for S={self.S}, MSE={mse_error_before_filtering:.2f}')
+            # print('MSE for Recovered Image Before Filtering:', mse_error_before_filtering)
+            #
+            # recovered_img_filtered = median_filter(recovered_img)
+            # mse_error = mse(self.img, recovered_img_filtered)
+            # img_show(recovered_img_filtered, f'Recovered Image After Filtering for S={self.S}, MSE={mse_error:.2f}')
+            # print('MSE for Recovered Image After Filtering:', mse_error)
+            #
+            # errors_before_filtering[self.S] = mse_error_before_filtering
+            # errors[self.S] = mse_error
 
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
