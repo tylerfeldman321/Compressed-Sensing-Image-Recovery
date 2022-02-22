@@ -278,27 +278,25 @@ class ImageRecover():
 
             recovered_blocks, sampled_blocks = img_blocks.copy(), img_blocks.copy()
 
-            self.recover_block(img_blocks[0])
+            for i in tqdm(range(len(img_blocks))):
+                recovered_blocks[i], sampled_blocks[i] = self.recover_block(img_blocks[i])
 
-            # for i in tqdm(range(len(img_blocks))):
-            #     recovered_blocks[i], sampled_blocks[i] = self.recover_block(img_blocks[i])
-            #
-            # # Combine recovered blocks, apply median filter, and show recovered image
-            # img_sampled = combine_block_to_get_image(sampled_blocks, self.img.shape)
-            # img_show(img_sampled, f'Sampled Image with S={self.S}')
-            #
-            # recovered_img = combine_block_to_get_image(recovered_blocks, self.img.shape)
-            # mse_error_before_filtering = mse(self.img, recovered_img)
-            # img_show(recovered_img, f'Recovered Image Before Filtering for S={self.S}, MSE={mse_error_before_filtering:.2f}')
-            # print('MSE for Recovered Image Before Filtering:', mse_error_before_filtering)
-            #
-            # recovered_img_filtered = median_filter(recovered_img)
-            # mse_error = mse(self.img, recovered_img_filtered)
-            # img_show(recovered_img_filtered, f'Recovered Image After Filtering for S={self.S}, MSE={mse_error:.2f}')
-            # print('MSE for Recovered Image After Filtering:', mse_error)
-            #
-            # errors_before_filtering[self.S] = mse_error_before_filtering
-            # errors[self.S] = mse_error
+            # Combine recovered blocks, apply median filter, and show recovered image
+            img_sampled = combine_block_to_get_image(sampled_blocks, self.img.shape)
+            img_show(img_sampled, f'Sampled Image with S={self.S}')
+
+            recovered_img = combine_block_to_get_image(recovered_blocks, self.img.shape)
+            mse_error_before_filtering = mse(self.img, recovered_img)
+            img_show(recovered_img, f'Recovered Image Before Filtering for S={self.S}, MSE={mse_error_before_filtering:.2f}')
+            print('MSE for Recovered Image Before Filtering:', mse_error_before_filtering)
+
+            recovered_img_filtered = median_filter(recovered_img)
+            mse_error = mse(self.img, recovered_img_filtered)
+            img_show(recovered_img_filtered, f'Recovered Image After Filtering for S={self.S}, MSE={mse_error:.2f}')
+            print('MSE for Recovered Image After Filtering:', mse_error)
+
+            errors_before_filtering[self.S] = mse_error_before_filtering
+            errors[self.S] = mse_error
 
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
