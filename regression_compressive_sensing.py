@@ -3,17 +3,20 @@
 
 # import ext libs
 import numpy as np
-import pandas as pd
+import os
 import matplotlib.pyplot as plt
-# from scipy.misc import imread   # Make Sure you install the required packages like Pillow and scipy
 from sklearn.linear_model import Lasso
-from scipy.signal import medfilt2d
+from scipy.signal import medfilt2d, convolve2d
 from tqdm import tqdm
+from scipy.ndimage import uniform_filter
 
 
 from warnings import simplefilter
 from sklearn.exceptions import ConvergenceWarning
 simplefilter("ignore", category=ConvergenceWarning)
+
+
+RESULTS_DIR = 'Output'
 
 
 def img_read(filename):
@@ -35,23 +38,25 @@ def img_show(img_out, title):
     :return: None
     """
     img_out = np.uint8(img_out)
-    plt.imshow(img_out, cmap='gray')
+    img = plt.imshow(img_out, cmap='gray')
     if title:
         plt.title(title)
     plt.show()
 
 
-def img_recover(img, blk_size, num_sample):
+def img_save(img_out, title):
     """
-    Recover the input image from a small size samples
-    :param img: input image
-    :param blk_size: block size
-    :param num_sample: how many samples in each block
-    :return: recovered image
+    show the image saved in a matrix
+    :param img_out: a matrix containing the image to show
+    :param title: title of plot
+    :return: None
     """
-    # Your Implementation here
-
-    return None
+    plt.figure()
+    img_out = np.uint8(img_out)
+    plt.imshow(img_out, cmap='gray')
+    if title:
+        plt.title(title)
+    plt.savefig(os.path.join(RESULTS_DIR, title + '.png'))
 
 
 def split_img_into_blocks(img, k):
@@ -94,7 +99,7 @@ def sample_pixels_from_block(block, S, copy=False):
     sampled_pixel_indices = np.sort(sampled_pixel_indices)
     sampled_pixels = block_ravel[sampled_pixel_indices]
 
-    block_ravel[unknown_pixels_indices] = 0
+    block_ravel[unknown_pixels_indices] = np.min(block_ravel) # 0
     block_for_viewing = block_ravel.reshape(block.shape)
 
     return block_for_viewing, sampled_pixels, sampled_pixel_indices, unknown_pixels, unknown_pixels_indices
@@ -115,34 +120,16 @@ def make_T(n=8):
             for u in np.arange(1, n+1):
                 for v in np.arange(1, n+1):
                     T[(y-1) * n + (x-1), (u-1) * n + (v-1)] = get_val_T(x, y, u, v, P, Q)
-    return T
-
-
-def make_T_alt(n=8):
-    T = np.zeros((n*n, n*n))
-    P, Q = n, n
-    for row in np.arange(1, T.shape[0]+1):
-        x = row % n
-        y = row // n
-
-        u = np.arange(1, P+1)
-        alpha = calc_alpha_vec(u, P)
-        h_u = alpha * cos_basis_function(x, u, P)
-        h_u = np.expand_dims(h_u, axis=1)
-
-        v = np.arange(1, Q+1)
-        beta = calc_beta_vec(v, Q)
-        h_v = beta * cos_basis_function(y, v, Q)
-        h_v = np.expand_dims(h_v, axis=1)
-
-        T[row-1] = np.matmul(h_u, h_v.T).ravel()
+    T[:, 0] = 1
     return T
 
 
 def estimate_dct_coeffs(T, pixel_values, lam):
-    clf = Lasso(alpha=lam, fit_intercept=False)
-    clf.fit(T, pixel_values)
+    clf = Lasso(alpha=lam)
+    clf.fit(T[:, 1:], pixel_values)
     coeffs = clf.coef_
+    intercept = clf.intercept_
+    coeffs = np.concatenate((intercept, coeffs), axis=None)
     return coeffs
 
 
@@ -181,8 +168,9 @@ def calc_beta_vec(v, Q):
 # Combine them
 # Median filter
 
+
 class ImageRecover():
-    def __init__(self, img_path='fishing_boat.bmp', block_size=8, S_values=np.arange(10, 60, 60), lambda_val_list=np.logspace(-7, 5, num=30), num_cv_folds=10):
+    def __init__(self, img_path='data/fishing_boat.bmp', block_size=8, S_values=np.arange(30, 61, 10), lambda_val_list=np.logspace(-7, 5, num=30), num_cv_folds=10):
         self.T = make_T(block_size)
         self.block_size = block_size
         self.num_cv_folds = num_cv_folds
@@ -199,9 +187,6 @@ class ImageRecover():
 
         lambda_val_errors = {}
         for lambda_val in self.lambda_val_list:
-
-            # TODO: need to fix the random sampling here. For each fold, need to repeat process of randomly sampling t
-            #  testing pixels, not shuffling and taking partitions
 
             fold_size = self.S // self.num_cv_folds
 
@@ -227,7 +212,6 @@ class ImageRecover():
                 cv_error = mse(val_pixels, val_pixels_estimated)
                 cv_fold_errors.append(cv_error)
 
-
             lambda_val_avg_error = np.array(cv_fold_errors).sum() / len(cv_fold_errors)
             lambda_val_errors[lambda_val] = lambda_val_avg_error
 
@@ -243,13 +227,12 @@ class ImageRecover():
             ax.plot(best_lambda_value, lambda_val_errors[best_lambda_value], 'ro', label=f'Best Lambda Value; MSE {lambda_val_errors[best_lambda_value]}')
             ax.set_xscale('log')
             ax.grid(True)
-            ax.set_xlabel('Value of Lambda')
-            ax.set_ylabel('10-fold Cross Validation MSE for a Chosen Block')
+            ax.set_xlabel('Lambda')
+            ax.set_ylabel('10-fold Cross Validation MSE')
             plt.legend(loc='best')
-            plt.title('MSE vs Lambda for Block 3 in Fishing Boat')
+            plt.title('MSE vs Lambda for Chosen Block in Fishing Boat')
             fig.tight_layout()
             plt.show()
-
 
         # Estimate the unknown (test) pixels
         T_sampled = self.T[sampled_pixel_indices_in_T, :]
@@ -260,39 +243,40 @@ class ImageRecover():
         unknown_pixels_estimated = np.maximum(0, unknown_pixels_estimated)
         unknown_pixels_estimated = np.array(list(map(int, unknown_pixels_estimated)))
 
-        # print('True Pixel Values', unknown_pixels, unknown_pixels.shape, end='\n')
-        # print('Estimated Pixel Values: ', unknown_pixels_estimated, unknown_pixels_estimated.shape, end='\n\n')
-
         block_for_viewing_flattened = block_for_viewing.ravel()
         block_for_viewing_flattened[unknown_pixels_indices] = unknown_pixels_estimated
         block_for_viewing = np.reshape(block_for_viewing_flattened, block_for_viewing.shape)
         return block_for_viewing, sampled_block
 
     def recover_image(self):
-
         errors = {}
         errors_before_filtering = {}
+        errors_mean = {}
+        errors_gaussian3 = {}
         for S_value in self.S_values:
             self.S = S_value
             img_blocks = split_img_into_blocks(self.img, self.block_size)
 
             recovered_blocks, sampled_blocks = img_blocks.copy(), img_blocks.copy()
 
+            recovered_blocks[0], sampled_blocks[0] = self.recover_block(img_blocks[0])
+            img_show(sampled_blocks[0], 'Sampled Block in Fishing Boat')
+            img_show(img_blocks[0], 'Block in Fishing Boat')
+
             for i in tqdm(range(len(img_blocks))):
                 recovered_blocks[i], sampled_blocks[i] = self.recover_block(img_blocks[i])
 
             # Combine recovered blocks, apply median filter, and show recovered image
             img_sampled = combine_block_to_get_image(sampled_blocks, self.img.shape)
-            img_show(img_sampled, f'Sampled Image with S={self.S}')
 
             recovered_img = combine_block_to_get_image(recovered_blocks, self.img.shape)
             mse_error_before_filtering = mse(self.img, recovered_img)
-            img_show(recovered_img, f'Recovered Image Before Filtering for S={self.S}, MSE={mse_error_before_filtering:.2f}')
+            img_save(recovered_img, f'Recovered Image Before Filtering for S={self.S}, MSE={mse_error_before_filtering:.2f}')
             print('MSE for Recovered Image Before Filtering:', mse_error_before_filtering)
 
             recovered_img_filtered = median_filter(recovered_img)
             mse_error = mse(self.img, recovered_img_filtered)
-            img_show(recovered_img_filtered, f'Recovered Image After Filtering for S={self.S}, MSE={mse_error:.2f}')
+            img_save(recovered_img_filtered, f'Recovered Image After Median Filtering for S={self.S}, MSE={mse_error:.2f}')
             print('MSE for Recovered Image After Filtering:', mse_error)
 
             errors_before_filtering[self.S] = mse_error_before_filtering
@@ -313,6 +297,18 @@ class ImageRecover():
 
 def median_filter(image, kernel_size=3):
     return medfilt2d(image, kernel_size=kernel_size)
+
+
+def mean_filter(image, kernel_size=3):
+    return uniform_filter(image, size=3, mode='nearest')
+
+
+def gaussian_filter(image, kernel_size=3):
+    kernel = (1/16) * np.array([[1, 2, 1],
+                                [2, 4, 2],
+                                [1, 2, 1]])
+
+    return convolve2d(image, kernel, mode='same')
 
 
 def mse(y_hat, y):
